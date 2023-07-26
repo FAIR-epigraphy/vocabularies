@@ -1,0 +1,64 @@
+---
+title: "The use of 'Inscription Type' in the existing EAGLE project vocabularies"
+author:
+- Petra Hermankova^[Johannes Gutenberg University in Mainz, petra.hermankova@uni-mainz.de, https://orcid.org/0000-0002-6349-0540]
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    theme: united
+    toc: yes
+    toc_float: true
+    number_sections: true
+    toc_depth: 2
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+#install.packages("tidyverse")
+library(tidyverse)
+library(dplyr)
+```
+
+# Load data from Pietro
+```{r}
+all<- read.csv("data/queryResults.csv", sep = ",")
+```
+
+## Filter only for 'typeins'
+```{r}
+typeins <- all %>% 
+  dplyr::filter(grepl("typeins", concept))
+typeins
+```
+
+## How many unique values of 'typeins' there are?
+```{r}
+length(unique(typeins$concept))
+```
+
+## Subset only the unique values of 'typeins'
+```{r}
+unique_typeins <- typeins %>% 
+  select(concept, prefLabel, altLabel) %>% 
+  distinct(concept, prefLabel)
+unique_typeins
+```
+# Export as CSV file
+```{r}
+write_csv(unique_typeins, "data/EAGLE_typeins_unique.csv")
+```
+
+
+## Extract EAGLE ID as separate value
+
+```{r}
+typeins<- typeins %>% 
+  mutate(EAGLE_lod_id = str_extract(typeins$concept, "(?<= https://www.eagle-network.eu/voc/typeins/lod/)[:digit:]{1,3}")) 
+
+write_csv(typeins, "data/EAGLE_typeins_all.csv")
+
+```
+
+
+
+

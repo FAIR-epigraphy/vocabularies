@@ -1,0 +1,8 @@
+/data/large_data/
+/existing_vocabs_exploration/data/EDH_text_cleaned_2021-01-21.json
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+._README.md
+!/.gitignore

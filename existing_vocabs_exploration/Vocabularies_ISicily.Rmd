@@ -1,0 +1,802 @@
+---
+title: "Use of the existing Eagle project vocabularies in the I.Sicily dataset"
+author:
+- Petra Hermankova^[Johannes Gutenberg University in Mainz, petra.hermankova@uni-mainz.de, https://orcid.org/0000-0002-6349-0540]
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    theme: united
+    toc: yes
+    toc_float: true
+    number_sections: true
+    toc_depth: 2
+    df_print: paged
+---
+
+**The aim of this script is to analyse the usage of EAGLE vocabularies in the I.Sicily as part of the FAIR Epigraphy project and the Epigraphy.info working group tasked with cleaning up the EAGLE vocabularies.**
+
+## Environment setup
+
+```{r setup, echo=TRUE, message=FALSE}
+library(tidyverse)
+library(jsonlite)
+library(zen4R)
+library(xml2)
+library(XML)
+```
+
+# Data loading and preparation
+
+1.  Load the I.Sicily dataset
+
+You can download the latest dataset directly from Zenodo.
+
+```{r}
+download_zenodo("10.5281/zenodo.4431640", path = "./data")
+```
+
+2. Extract the zenodo repository
+```{r}
+unzip("./data/ISicily-v0.3beta.zip", exdir = "./data")
+```
+
+3. Read the XML files into a dataframe
+
+One XML file
+```{r}
+isicily_xml <- read_xml("./data/ISicily-ISicily-cf52385/inscriptions/ISic0001.xml")
+
+
+isicily_xml <- xmlToList("./data/ISicily-ISicily-cf52385/inscriptions/ISic0001.xml")
+
+```
+
+```{r}
+
+```
+
+
+# EAGLE vocabularies
+
+```{r}
+EAGLE_vocabs<- read.csv("data/queryResults.csv", sep = ",")
+head(EAGLE_vocabs)
+```
+
+```{r}
+EAGLE_typeins<- read.csv("data/EAGLE_typeins_all.csv", sep = ",")
+head(EAGLE_typeins)
+```
+
+# Use of EAGLE vocabularies in the EDH
+
+The Epigraphic Database Heidelberg (<https://edh-www.adw.uni-heidelberg.de/>) uses the existing vocabularies from EAGLE Project (<https://www.eagle-network.eu/resources/vocabularies/>) in the following five Epidoc XML tags: `Object Type`, `Keywords`, `Material`, `RS Execution`, `RS Decoration`.
+
+Example of record in XML:
+
+```         
+<support>
+  <objectType ref="http://www.eagle-network.eu/voc/objtyp/lod/257">Tafel</objectType>
+</support>
+```
+
+In our processed version of the EDH dataset, all records consist of the following attributes:
+
+-   Eagle Linked Open Data numeric code for vocabulary, i.e. 257, extracted from the reference within the Epidoc XML tag.
+
+-   Free text description, extracted from the XML tag.
+
+See the raw data below:
+
+```{r, select attributes}
+EDH_eagle<- EDH %>% 
+  select(layout_execution, layout_execution_text, support_objecttype, support_objecttype_text, support_material, support_material_text, support_decoration, keywords_term, keywords_term_text, type_of_inscription_clean)
+
+EDH_eagle
+```
+
+## Inscriptions with missing data from XML files
+
+In 2021, the total of 346 record were missing information extracted from XML files (due to delay in availability of published data through EDH data dumps on their website). However, at least partial information about them could be extracted from the then existing EDH API. For the purpose of the current evaluation of the Eagle vocabularies are these 346 records considered as missing as we cannot access their respective XML files with vocabularies.
+
+```{r}
+EDH %>% 
+  filter(is.na(support_objecttype)) -> missingXML
+missingXML
+```
+
+```{r, echo=FALSE, eval=FALSE}
+EDH_missingXML_json <- jsonlite::toJSON(missingXML)
+
+write(EDH_missingXML_json, file="data/EDH_missingXML_2021.json")
+```
+
+## The total number of Eagle vocabularies in EDH dataset
+
+```{r}
+#object
+EDH_eagle %>% 
+  filter(!is.na(support_objecttype) & support_objecttype != "") %>% nrow() -> object_total
+
+#type inscription
+EDH_eagle %>% 
+  filter(!is.na(keywords_term) & keywords_term != "" ) %>% nrow() -> typeinsc_total
+
+#material
+EDH_eagle %>% 
+  filter(!is.na(support_material) & support_material != "") %>% nrow() -> material_total
+
+#writing
+EDH_eagle %>% 
+  filter(!is.na(layout_execution) & layout_execution != "") %>% nrow() -> writing_total
+
+#decoration
+EDH_eagle %>% 
+  filter(!is.na(support_decoration) & support_decoration != "") %>% nrow() -> decor_total
+
+
+#how many Eagle vocabularies has been used in the EDH
+Eagle_total <- object_total + typeinsc_total + material_total + writing_total + decor_total
+Eagle_total
+```
+
+## Inscription type
+
+Attributes categorising the type of inscription, used `r typeinsc_total` times.
+
+XML: Keywords tag, term tag.
+
+Example of record in XML:
+
+```         
+<keywords>
+  <term ref="http://www.eagle-network.eu/voc/typeins/lod/92">Grabinschrift</term>
+</keywords>
+```
+
+### Display the first six values for illustration
+
+```{r}
+EDH_eagle %>% 
+  select(keywords_term, keywords_term_text, type_of_inscription_clean) %>%
+  head()
+```
+
+### List of all related Eagle vocabularies and their count
+
+```{r}
+EDH_eagle %>% 
+  select(keywords_term, keywords_term_text) %>% 
+  count(keywords_term, keywords_term_text, sort=TRUE) -> insc_type_overview_xml
+
+EDH_eagle %>% 
+  select(keywords_term, keywords_term_text,type_of_inscription_clean) %>% 
+  count(keywords_term, keywords_term_text, type_of_inscription_clean, sort=TRUE) -> insc_type_overview_all
+```
+
+```{r}
+write_csv(insc_type_overview_xml, "./EDH_inscription_type_eagle_vocab_xml.csv", col_names = TRUE)
+```
+
+```{r}
+insc_type_overview_xml
+```
+
+
+### Merge with EAGLE LOD data
+
+
+```{r}
+EDH_eagle
+```
+
+```{r}
+EDH_eagle$keywords_term <- as.numeric(EDH_eagle$keywords_term)
+
+
+EAGLE_typeins_all<- EDH_eagle %>% dplyr::left_join(EAGLE_typeins, by=c("keywords_term"="EAGLE_lod_id"), multiple="first")
+
+EAGLE_typeins_all %>% 
+  select(concept, prefLabel, keywords_term_text, type_of_inscription_clean) %>% 
+  count(concept, prefLabel, keywords_term_text, sort=TRUE) -> EDH_EAGLE_usage
+
+EDH_EAGLE_usage
+```
+#### Save as CSV
+```{r}
+write_csv(EDH_EAGLE_usage, file = "./data/EDH_EAGLE_usage_typeinsc.csv", col_names = TRUE)
+```
+
+
+
+### Total number of unique vocabularies
+
+```{r}
+length(unique(EDH_eagle$keywords_term))
+```
+
+### Overview of the ten most common vocabularies
+
+#### Keyword term 92 (Sepulcralis)
+
+<https://www.eagle-network.eu/voc/typeins/lod/92.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(keywords_term == 92) %>% 
+  count(keywords_term_text, sort=TRUE)
+```
+
+#### Keyword term 143 (Ignoratur)
+
+<https://www.eagle-network.eu/voc/typeins/lod/143.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(keywords_term == 143) %>% 
+  count(keywords_term_text, sort=TRUE)
+```
+
+#### Keyword term 80 (Weihinschrift)
+
+<https://www.eagle-network.eu/voc/typeins/lod/80.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(keywords_term == 80) %>% 
+  count(keywords_term_text, sort=TRUE)
+```
+
+#### Keyword term 311 (Besitzer-/Herstellerinschrift)
+
+<https://www.eagle-network.eu/voc/typeins/lod/311.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(keywords_term == 311) %>% 
+  count(keywords_term_text, sort=TRUE)
+```
+
+#### Keyword term 69 (Honorific inscription)
+
+<https://www.eagle-network.eu/voc/typeins/lod/69.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(keywords_term == 69) %>% 
+  count(keywords_term_text, sort=TRUE)
+```
+
+#### Keyword term 261 (Bau-/Stifterinschrift)
+
+<https://www.eagle-network.eu/voc/typeins/lod/261.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(keywords_term == 261) %>% 
+  count(keywords_term_text, sort=TRUE)
+```
+
+#### Keyword term 102 (Meilen-/Leugenstein)
+
+<https://www.eagle-network.eu/voc/typeins/lod/102.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(keywords_term == 102) %>% 
+  count(keywords_term_text, sort=TRUE)
+```
+
+#### Keyword term 115 (Aufschrift)
+
+<https://www.eagle-network.eu/voc/typeins/lod/115.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(keywords_term == 115) %>% 
+  count(keywords_term_text, sort=TRUE)
+```
+
+#### Keyword term 73 (Akklamation)
+
+<https://www.eagle-network.eu/voc/typeins/lod/73.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(keywords_term == 73) %>% 
+  count(keywords_term_text, sort=TRUE)
+```
+
+#### Keyword term 91 (Militärdiplom)
+
+<https://www.eagle-network.eu/voc/typeins/lod/91.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(keywords_term == 91) %>% 
+  count(keywords_term_text, sort=TRUE)
+```
+
+### Missing Eagle LOD, text present
+
+```{r}
+EDH_eagle %>% 
+  select(keywords_term, keywords_term_text) %>% 
+  filter(keywords_term == "") %>% 
+  count(keywords_term_text, sort=TRUE)
+```
+
+### All unique values of text input
+
+```{r}
+unique(EDH_eagle$keywords_term_text)
+```
+
+## Object
+
+Attributes categorising the inscribed object, used `r object_total` times.
+
+XML: Support tag, tag objectType.
+
+Example of record in XML:
+
+```         
+<support>
+  <objectType ref="http://www.eagle-network.eu/voc/objtyp/lod/257">Tafel</objectType>
+</support>
+```
+
+### Display the first six values for illustration
+
+```{r, head objecttype}
+EDH_eagle %>% 
+  select(support_objecttype, support_objecttype_text) %>% 
+  head()
+```
+
+### List of all related Eagle object vocabularies and their count
+
+```{r}
+EDH_eagle %>% 
+  select(support_objecttype, support_objecttype_text) %>% 
+  count(support_objecttype, sort=TRUE)
+```
+
+### Total number of unique object vocabularies
+
+```{r}
+length(unique(EDH_eagle$support_objecttype))
+```
+
+### Overview of the ten most common vocabularies
+
+#### Object type 2 (ignoratur)
+
+<http://www.eagle-network.eu/voc/objtyp/lod/2.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(support_objecttype == 2) %>% 
+  count(support_objecttype_text, sort=TRUE)
+```
+
+#### Object type 257 (Tafel)
+
+<http://www.eagle-network.eu/voc/objtyp/lod/257.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(support_objecttype == 257) %>% 
+  count(support_objecttype_text, sort=TRUE)
+```
+
+#### Object type 29 (Altar)
+
+<http://www.eagle-network.eu/voc/objtyp/lod/29.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(support_objecttype == 29) %>% 
+  count(support_objecttype_text, sort=TRUE)
+```
+
+#### Object type 250 (Stele)
+
+<http://www.eagle-network.eu/voc/objtyp/lod/250.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(support_objecttype == 250) %>% 
+  count(support_objecttype_text, sort=TRUE)
+```
+
+#### Object type 140 (Instrumentum domesticum)
+
+<http://www.eagle-network.eu/voc/objtyp/lod/140.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(support_objecttype == 140) %>% 
+  count(support_objecttype_text, sort=TRUE)
+```
+
+#### Object type 57 (Statue base)
+
+<http://www.eagle-network.eu/voc/objtyp/lod/57.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(support_objecttype == 57) %>% 
+  count(support_objecttype_text, sort=TRUE)
+```
+
+#### Object type 189 (Block)
+
+<http://www.eagle-network.eu/voc/objtyp/lod/189.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(support_objecttype == 189) %>% 
+  count(support_objecttype_text, sort=TRUE)
+```
+
+#### Object type 35 (Architekturteil)
+
+<http://www.eagle-network.eu/voc/objtyp/lod/35.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(support_objecttype == 35) %>% 
+  count(support_objecttype_text, sort=TRUE)
+```
+
+#### Object type 214 (Sarkophag)
+
+<http://www.eagle-network.eu/voc/objtyp/lod/214.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(support_objecttype == 214) %>% 
+  count(support_objecttype_text, sort=TRUE)
+```
+
+#### Object type 89 (Meilen-/Leugenstein)
+
+<http://www.eagle-network.eu/voc/objtyp/lod/89.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(support_objecttype == 89) %>% 
+  count(support_objecttype_text, sort=TRUE)
+```
+
+### Missing Eagle vocabulary, but text present
+
+```{r}
+EDH_eagle %>% 
+  select(support_objecttype, support_objecttype_text) %>% 
+  filter(support_objecttype == "") %>% 
+  count(support_objecttype_text, sort=TRUE)
+```
+
+### List of all vocabularies, their text description and count
+
+```{r}
+EDH_eagle %>% 
+  select(support_objecttype, support_objecttype_text) %>% 
+  count(support_objecttype, support_objecttype_text, sort=T)
+```
+
+### List of all unique values of text input
+
+```{r}
+unique(EDH_eagle$support_objecttype_text)
+```
+
+
+## Material
+
+Attributes categorising the inscribed material, used `r material_total` times.
+
+XML: Support tag, material tag.
+
+Example of record in XML (with missing Eagle LOD):
+
+```         
+<support>
+  <material>Marmor, geädert / farbig</material>
+</support>
+```
+
+### Display the first six values for illustration
+
+```{r}
+EDH_eagle %>% 
+  select(support_material, support_material_text) %>%
+  head()
+```
+
+### List of all related Eagle vocabularies and their count
+
+```{r}
+EDH_eagle %>% 
+  select(support_material, support_material_text) %>% 
+  count(support_material, sort=TRUE)
+```
+
+### Total number of unique vocabularies
+
+```{r}
+length(unique(EDH_eagle$support_material))
+```
+
+### Overview of the ten most common vocabularies
+
+#### Material 138 (ignoratur)
+
+<https://www.eagle-network.eu/voc/material/lod/138.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(support_material == 138) %>% 
+  count(support_material_text, sort=TRUE)
+```
+
+#### Material 60 (Kalkstein)
+
+<https://www.eagle-network.eu/voc/material/lod/60.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(support_material == 60) %>% 
+  count(support_material_text, sort=TRUE)
+```
+
+#### Material 75 (Sandstein)
+
+<https://www.eagle-network.eu/voc/material/lod/75.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(support_material == 75) %>% 
+  count(support_material_text, sort=TRUE)
+```
+
+#### Material 48 (Marmor)
+
+<https://www.eagle-network.eu/voc/material/lod/48.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(support_material == 48) %>% 
+  count(support_material_text, sort=TRUE)
+```
+
+#### Material 131 (Arcilla)
+
+<https://www.eagle-network.eu/voc/material/lod/131.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(support_material == 131) %>% 
+  count(support_material_text, sort=TRUE)
+```
+
+#### Material 109 (Aes)
+
+<https://www.eagle-network.eu/voc/material/lod/109.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(support_material == 109) %>% 
+  count(support_material_text, sort=TRUE)
+```
+
+#### Material 108 (Plumbum)
+
+<https://www.eagle-network.eu/voc/material/lod/108.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(support_material == 108) %>% 
+  count(support_material_text, sort=TRUE)
+```
+
+#### Material 123 (Lignum)
+
+<https://www.eagle-network.eu/voc/material/lod/123.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(support_material == 123) %>% 
+  count(support_material_text, sort=TRUE)
+```
+
+#### Material 115 (Argentum)
+
+<https://www.eagle-network.eu/voc/material/lod/115.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(support_material == 115) %>% 
+  count(support_material_text, sort=TRUE)
+```
+
+### Material missing Eagle LOD, text present
+
+Example: `<material>Marmor, geädert / farbig</material>`
+
+```{r}
+EDH_eagle %>% 
+  select(support_material, support_material_text) %>% 
+  filter(support_material == "") %>% 
+  count(support_material_text, sort=TRUE)
+```
+
+### All unique values of text input
+
+```{r}
+unique(EDH_eagle$support_material_text)
+```
+
+## Writing
+
+Attributes categorising the execution of writing, used `r writing_total` times.
+
+XML: Layout tag, type execution.
+
+Example of record in XML:
+
+```         
+<layout>
+  <rs type="execution" ref="http://www.eagle-network.eu/voc/writing/lod/21">unbestimmt</rs>
+</layout>
+```
+
+### Display the first six values for illustration
+
+```{r}
+EDH_eagle %>% 
+  select(layout_execution, layout_execution_text) %>%
+  head()
+```
+
+### List of all related Eagle vocabularies and their count
+
+```{r}
+EDH_eagle %>% 
+  select(layout_execution, layout_execution_text) %>% 
+  count(layout_execution, sort=TRUE)
+```
+
+### Total number of unique vocabularies
+
+```{r}
+length(unique(EDH_eagle$layout_execution))
+```
+
+### Overview of the ten most common vocabularies
+
+#### Layout execution 21 (Ignoratur)
+
+<https://www.eagle-network.eu/voc/writing/lod/21.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(layout_execution == 21) %>% 
+  count(layout_execution_text, sort=TRUE)
+```
+
+#### Layout execution 88 (Geritzt)
+
+<https://www.eagle-network.eu/voc/writing/lod/88.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(layout_execution == 88) %>% 
+  count(layout_execution_text, sort=TRUE)
+```
+
+#### Layout execution 77 (gestempelt)
+
+<https://www.eagle-network.eu/voc/writing/lod/77.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(layout_execution == 77) %>% 
+  count(layout_execution_text, sort=TRUE)
+```
+
+#### Layout execution 96 (Gemalt / Dipinto)
+
+<https://www.eagle-network.eu/voc/writing/lod/96.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(layout_execution == 96) %>% 
+  count(layout_execution_text, sort=TRUE)
+```
+
+#### Layout execution 145 (gepunzt)
+
+<https://www.eagle-network.eu/voc/writing/lod/145.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(layout_execution == 145) %>% 
+  count(layout_execution_text, sort=TRUE)
+```
+
+#### Layout execution 23 (eingraviert)
+
+<https://www.eagle-network.eu/voc/writing/lod/23.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(layout_execution == 23) %>% 
+  count(layout_execution_text, sort=TRUE)
+```
+
+#### Layout execution 152 (mozaik)
+
+<https://www.eagle-network.eu/voc/writing/lod/152.html>
+
+```{r}
+EDH_eagle %>% 
+  filter(layout_execution == 152) %>% 
+  count(layout_execution_text, sort=TRUE)
+```
+
+### Layout execution empty tag, but text present
+
+```{r}
+EDH_eagle %>% 
+  filter(layout_execution == "") %>% 
+  count(layout_execution_text, sort=TRUE)
+```
+
+### Layout execution NA (tag completely missing in XML)
+
+```{r}
+EDH_eagle %>% 
+  select(layout_execution, layout_execution_text) %>% 
+  filter(is.na(layout_execution)) %>% 
+  count(layout_execution_text, sort=TRUE)
+```
+
+### All unique values of text input
+
+```{r}
+unique(EDH_eagle$layout_execution_text)
+```
+
+## Decoration
+
+Attributes categorising the type of decoration. In EDH very limited use - not the full potential of LOD, used `r decor_total` times.
+
+XML: Support, Rs tag, type decoration.
+
+Example of record in XML:
+
+```         
+<rs type="decoration" ref="http://www.eagle-network.eu/voc/decor/lod/1000">nein</rs>
+```
+
+<https://www.eagle-network.eu/voc/decor/lod/1000.html> = nein
+
+<https://www.eagle-network.eu/voc/decor/lod/2000.html>, 2000 = ja
+
+NA = missing information
+
+### Total number of unique vocabularies
+
+```{r}
+length(unique(EDH_eagle$support_decoration))
+```
+
+### List of all related Eagle vocabularies and their count
+
+```{r}
+EDH_eagle %>% 
+  count(support_decoration, sort=TRUE)
+```
