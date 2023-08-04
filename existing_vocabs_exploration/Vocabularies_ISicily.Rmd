@@ -27,33 +27,233 @@ library(XML)
 
 # Data loading and preparation
 
-1.  Load the I.Sicily dataset
-
-You can download the latest dataset directly from Zenodo.
+##  Load the latest I.Sicily dataset directly from Zenodo
 
 ```{r}
 download_zenodo("10.5281/zenodo.4431640", path = "./data")
 ```
 
-2. Extract the zenodo repository
+## Extract the Zenodo repository
 ```{r}
 unzip("./data/ISicily-v0.3beta.zip", exdir = "./data")
 ```
 
-3. Read the XML files into a dataframe
+## Read and parse the XML files and extract the vocabularies data into a CSV, using python script
 
-One XML file
+We are looking specifically for vocabularies `terms` that contain information about the type of an inscription
+`<textClass>`
+  `<keywords scheme="http://www.eagle-network.eu/voc/typeins.html">`
+    `<term key="funerary" ref="http://www.eagle-network.eu/voc/typeins/lod/92.html">funerary</term>`
+  `</keywords>`
+`</textClass>`
+
 ```{r}
-isicily_xml <- read_xml("./data/ISicily-ISicily-cf52385/inscriptions/ISic0001.xml")
+# Enabling reticulate library to run the python scripts within R
+library(reticulate)
+```
+
+```{python}
+# Read and parse the XML files and extract the vocabularies data into a CSV, using python script
+
+#!/usr/bin/env python3
+# Epidoc to csv converter
+# written by Brian Ballsun-Stanton
+# under a MIT License
+
+import glob
+import csv
+import epidoc
+import shutil
+import os
+import tqdm
+
+PROJECT = "ISicily"
+SOURCE_DIR = "./data/ISicily-ISicily-cf52385/inscriptions/"
+TARGET_DIR = "xml_to_csv"
+
+# clean target dir by deleting and recreating
+shutil.rmtree(TARGET_DIR, ignore_errors=True)
+os.mkdir(TARGET_DIR)
+
+docs = []
+
+# get all files in source dir
+for file in tqdm.tqdm(glob.glob(f"{SOURCE_DIR}/*.xml")):
+    with open(file) as f:
+        doc = epidoc.load(f)
+    docs.append(doc)
+    # break
+
+output_docs = []
 
 
-isicily_xml <- xmlToList("./data/ISicily-ISicily-cf52385/inscriptions/ISic0001.xml")
+# Get Title, All instances of idno and terms
+# Terms hide under textClass
 
+for doc in tqdm.tqdm(docs):
+    line = {}
+    line["title"] = doc.title
+    line["idno"] = doc.idno
+    line["terms"] = doc.terms
+    output_docs.append(line)
+
+# Write to CSV
+with open(f"{TARGET_DIR}/{PROJECT}_xml_to_csv_output.csv", "w") as f:
+    writer = csv.DictWriter(f, fieldnames=["title", "idno", "terms"])
+    writer.writeheader()
+    for doc in output_docs:
+        writer.writerow(doc)
+        
+print(doc)
+        
+```
+
+```{python}
+output_docs
 ```
 
 ```{r}
+py$output_docs -> output_docs_r
+```
+
+```{r}
+library(nplyr)
+output_docs_r
+
+test<- lapply(output_docs_r, unlist)
+
+head(test)
+
+test[[1]]
+
+output_docs_r %>% 
+  map_dfc(identity)
 
 ```
+
+NESTED LISTS https://www.tenderisthebyte.com/blog/2019/11/02/notes-from-the-messyverse-tidying-nested-lists/
+
+
+```{python}
+# List all unique keys 
+
+import csv
+import pandas as pd
+import numpy as np
+import json
+
+import csv
+keys = set() # create an empty set to store the keys
+with open("./xml_to_csv/ISicily_xml_to_csv_output.csv") as f: # open the CSV file
+    reader = csv.DictReader(f) # create a reader object
+    for row in reader: # loop through each row
+        terms = eval(row["terms"]) # convert the terms column to a list of dictionaries
+        for term in terms: # loop through each term dictionary
+            keys.add(term["key"]) # add the key value to the set
+print(keys) # print the set of keys
+
+refs = set() # create an empty set to store the refs
+with open("./xml_to_csv/ISicily_xml_to_csv_output.csv") as f: # open the CSV file
+    reader = csv.DictReader(f) # create a reader object
+    for row in reader: # loop through each row
+        terms = eval(row["terms"]) # convert the terms column to a list of dictionaries
+        for term in terms: # loop through each term dictionary
+            refs.add(term["ref"]) # add the ref value to the set
+print(refs) # print the set of keys
+```
+
+```{python}
+#list of all unique keys with their frequency
+import csv
+counts = {} # create an empty dictionary to store the counts
+with open("./xml_to_csv/ISicily_xml_to_csv_output.csv") as f: # open the CSV file
+    reader = csv.DictReader(f) # create a reader object
+    for row in reader: # loop through each row
+        terms = eval(row["terms"]) # convert the terms column to a list of dictionaries
+        for term in terms: # loop through each term dictionary
+            key = term["key"] # get the key value
+            counts[key] = counts.get(key, 0) + 1 # increment the count for the key or set it to 1 if not in the dictionary
+print(counts) # print the dictionary of counts
+
+counts2 = {} # create an empty dictionary to store the counts
+with open("./xml_to_csv/ISicily_xml_to_csv_output.csv") as f: # open the CSV file
+    reader = csv.DictReader(f) # create a reader object
+    for row in reader: # loop through each row
+        terms = eval(row["terms"]) # convert the terms column to a list of dictionaries
+        for term in terms: # loop through each term dictionary
+            ref = term["ref"] # get the ref value
+            counts2[ref] = counts.get(ref, 0) + 1 # increment the count for the key or set it to 1 if not in the dictionary
+print(counts2) # print the dictionary of counts
+
+```
+
+
+
+```{python}
+import pandas as pd
+df = pd.read_csv("./xml_to_csv/ISicily_xml_to_csv_output.csv") # read the CSV file into a dataframe
+df["idno"] = df["idno"].apply(eval) # convert the idno column to a dictionary
+df = df.explode("terms") # expand the list of dictionaries into separate rows
+df[["idno_filename", "idno_doi"]] = df["idno"][["filename", "doi"]] # extract the filename and doi values from the idno dictionary into separate columns
+df[["key", "ref", "text"]] = pd.json_normalize(df["terms"]) # extract the key, ref, and text values from the terms dictionary into separate columns
+#df = df.drop(["idno", "terms"], axis=1) # drop the idno and terms columns
+df = df.fillna("NA") # fill any empty values with NA
+print(df) # print the dataframe
+
+```
+
+
+
+```{r}
+df <- read.csv("./xml_to_csv/ISicily_xml_to_csv_output.csv")
+
+library(tidyr)
+df$idno <- lapply(df$idno, eval) # convert idno column to a list
+df$terms <- lapply(df$terms, eval) # convert terms column to a list
+df <- unnest(df, c(idno, terms), names_sep="_") # expand the lists into separate rows
+
+library(dplyr)
+df <- df %>%
+  select(title, #filename = idno["filename"], idno_doi = idno["doi"], 
+         key, ref, text) %>% # select and rename columns
+  replace_na(list(key = "NA", ref = "NA", text = "NA")) # fill empty values with NA
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+# Explore the `ISicily` vocabularies
+
+```{r}
+# load the data from CSV (stored in the JSON structure because of the multivalued attributes)
+
+ISicily <- read_csv("./xml_to_csv/ISicily_xml_to_csv_output.csv", progress = TRUE)
+ISicily
+```
+
+```{r}
+ISicily %>% 
+  as_tibble() %>% 
+  mutate(
+    terms = gsub("'", "\"", terms),
+    terms = list(jsonlite::fromJSON(terms))  
+    ) %>%
+  unnest()
+```
+
+
+
+
+
 
 
 # EAGLE vocabularies
