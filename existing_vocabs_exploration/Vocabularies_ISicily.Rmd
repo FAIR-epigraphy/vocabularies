@@ -66,6 +66,10 @@ import epidoc
 import shutil
 import os
 import tqdm
+import json
+import numpy as np
+import pandas as pd
+
 
 PROJECT = "ISicily"
 SOURCE_DIR = "./data/ISicily-ISicily-cf52385/inscriptions/"
@@ -78,10 +82,12 @@ os.mkdir(TARGET_DIR)
 docs = []
 
 # get all files in source dir
-for file in tqdm.tqdm(glob.glob(f"{SOURCE_DIR}/*.xml")):
+for i, file in enumerate(tqdm.tqdm(glob.glob(f"{SOURCE_DIR}/*.xml"))):
     with open(file) as f:
         doc = epidoc.load(f)
     docs.append(doc)
+    # if i > 10:
+    #     break
     # break
 
 output_docs = []
@@ -90,165 +96,125 @@ output_docs = []
 # Get Title, All instances of idno and terms
 # Terms hide under textClass
 
+max_terms = 0
+
 for doc in tqdm.tqdm(docs):
     line = {}
     line["title"] = doc.title
     line["idno"] = doc.idno
-    line["terms"] = doc.terms
+    for i, term in enumerate(doc.terms):
+        # prepend _{i} to each key inside term
+        for key in term.copy().keys():
+            term[f"term_{key}_{i}"] = term.pop(key) 
+        line[f"term_{i}"] = term
+        if max_terms < i:
+            max_terms = i
+
     output_docs.append(line)
 
+
+
+# Write to JSON
+with open(f"{TARGET_DIR}/{PROJECT}_type_of_inscriptions.json", "w") as f:
+    json.dump(output_docs, f, indent=4)
+
+
+
+# Make output_docs a dataframe
+df = pd.DataFrame(output_docs)
+# flatten the idno dictionary into the dataframe
+df = pd.concat([df.drop(["idno"], axis=1), df["idno"].apply(pd.Series)], axis=1)
+for i in range(max_terms+1):
+    print(i)
+    df = pd.concat([df.drop([f"term_{i}"], axis=1), df[f"term_{i}"].apply(pd.Series)], axis=1)
+
 # Write to CSV
-with open(f"{TARGET_DIR}/{PROJECT}_xml_to_csv_output.csv", "w") as f:
-    writer = csv.DictWriter(f, fieldnames=["title", "idno", "terms"])
-    writer.writeheader()
-    for doc in output_docs:
-        writer.writerow(doc)
-        
-print(doc)
-        
-```
+df.to_csv(f"{TARGET_DIR}/{PROJECT}_type_of_inscriptions.csv", index=False)
 
-```{python}
-output_docs
+
 ```
 
 ```{r}
-py$output_docs -> output_docs_r
+# load the CSV back in
+ISicily_csv <- read.csv("./xml_to_csv/ISicily_type_of_inscriptions.csv")
+
+# select smaller subset to work with
+
+ISicily_csv %>% 
+  select(title, term_key_0, term_ref_0, term_text_0, term_key_1, term_ref_1, term_text_1) -> vocabs
+
+View(vocabs)
 ```
+
+# Explore the `ISicily` vocabularies and its use
 
 ```{r}
-library(nplyr)
-output_docs_r
+# how many unique types of inscriptions there are
 
-test<- lapply(output_docs_r, unlist)
-
-head(test)
-
-test[[1]]
-
-output_docs_r %>% 
-  map_dfc(identity)
+unique(vocabs$term_key_0) %>% sort() -> unique_keys
+length(unique_keys)
+unique_keys
 
 ```
-
-NESTED LISTS https://www.tenderisthebyte.com/blog/2019/11/02/notes-from-the-messyverse-tidying-nested-lists/
-
-
-```{python}
-# List all unique keys 
-
-import csv
-import pandas as pd
-import numpy as np
-import json
-
-import csv
-keys = set() # create an empty set to store the keys
-with open("./xml_to_csv/ISicily_xml_to_csv_output.csv") as f: # open the CSV file
-    reader = csv.DictReader(f) # create a reader object
-    for row in reader: # loop through each row
-        terms = eval(row["terms"]) # convert the terms column to a list of dictionaries
-        for term in terms: # loop through each term dictionary
-            keys.add(term["key"]) # add the key value to the set
-print(keys) # print the set of keys
-
-refs = set() # create an empty set to store the refs
-with open("./xml_to_csv/ISicily_xml_to_csv_output.csv") as f: # open the CSV file
-    reader = csv.DictReader(f) # create a reader object
-    for row in reader: # loop through each row
-        terms = eval(row["terms"]) # convert the terms column to a list of dictionaries
-        for term in terms: # loop through each term dictionary
-            refs.add(term["ref"]) # add the ref value to the set
-print(refs) # print the set of keys
-```
-
-```{python}
-#list of all unique keys with their frequency
-import csv
-counts = {} # create an empty dictionary to store the counts
-with open("./xml_to_csv/ISicily_xml_to_csv_output.csv") as f: # open the CSV file
-    reader = csv.DictReader(f) # create a reader object
-    for row in reader: # loop through each row
-        terms = eval(row["terms"]) # convert the terms column to a list of dictionaries
-        for term in terms: # loop through each term dictionary
-            key = term["key"] # get the key value
-            counts[key] = counts.get(key, 0) + 1 # increment the count for the key or set it to 1 if not in the dictionary
-print(counts) # print the dictionary of counts
-
-counts2 = {} # create an empty dictionary to store the counts
-with open("./xml_to_csv/ISicily_xml_to_csv_output.csv") as f: # open the CSV file
-    reader = csv.DictReader(f) # create a reader object
-    for row in reader: # loop through each row
-        terms = eval(row["terms"]) # convert the terms column to a list of dictionaries
-        for term in terms: # loop through each term dictionary
-            ref = term["ref"] # get the ref value
-            counts2[ref] = counts.get(ref, 0) + 1 # increment the count for the key or set it to 1 if not in the dictionary
-print(counts2) # print the dictionary of counts
-
-```
-
-
-
-```{python}
-import pandas as pd
-df = pd.read_csv("./xml_to_csv/ISicily_xml_to_csv_output.csv") # read the CSV file into a dataframe
-df["idno"] = df["idno"].apply(eval) # convert the idno column to a dictionary
-df = df.explode("terms") # expand the list of dictionaries into separate rows
-df[["idno_filename", "idno_doi"]] = df["idno"][["filename", "doi"]] # extract the filename and doi values from the idno dictionary into separate columns
-df[["key", "ref", "text"]] = pd.json_normalize(df["terms"]) # extract the key, ref, and text values from the terms dictionary into separate columns
-#df = df.drop(["idno", "terms"], axis=1) # drop the idno and terms columns
-df = df.fillna("NA") # fill any empty values with NA
-print(df) # print the dataframe
-
-```
-
 
 
 ```{r}
-df <- read.csv("./xml_to_csv/ISicily_xml_to_csv_output.csv")
-
-library(tidyr)
-df$idno <- lapply(df$idno, eval) # convert idno column to a list
-df$terms <- lapply(df$terms, eval) # convert terms column to a list
-df <- unnest(df, c(idno, terms), names_sep="_") # expand the lists into separate rows
-
-library(dplyr)
-df <- df %>%
-  select(title, #filename = idno["filename"], idno_doi = idno["doi"], 
-         key, ref, text) %>% # select and rename columns
-  replace_na(list(key = "NA", ref = "NA", text = "NA")) # fill empty values with NA
-
-```
-
-
-
-
-
-
-
-
-
-
-
-
-# Explore the `ISicily` vocabularies
-
-```{r}
-# load the data from CSV (stored in the JSON structure because of the multivalued attributes)
-
-ISicily <- read_csv("./xml_to_csv/ISicily_xml_to_csv_output.csv", progress = TRUE)
-ISicily
+# what is the frequency of types of inscriptions from the most to least used
+vocabs %>% 
+  count(term_key_0, sort=T)
 ```
 
 ```{r}
-ISicily %>% 
-  as_tibble() %>% 
-  mutate(
-    terms = gsub("'", "\"", terms),
-    terms = list(jsonlite::fromJSON(terms))  
-    ) %>%
-  unnest()
+# what is the combination of inscription types used to describe one inscription
+
+vocabs %>% 
+  filter(term_key_1 != "") %>% 
+  select(term_key_0, term_key_1)
 ```
+
+
+
+
+# what Eagle vocabularies are used
+
+```{r}
+vocabs %>% 
+  distinct(term_ref_0)
+```
+
+# what is the frequency of Eagle vocabularies
+
+```{r}
+vocabs %>% 
+ count(term_ref_0, sort=T)
+```
+
+# what is the combination of Eagle vocabularies used to describe one inscription
+
+```{r}
+vocabs %>% 
+  filter(term_ref_1 != "") %>% 
+  select(term_ref_0, term_ref_1)
+```
+
+
+
+# what are the unique combinations of Eagle vocabulary and freetext
+
+```{r}
+vocabs %>% 
+  count(term_key_0, term_text_0, term_ref_0, sort=T) %>% 
+  View
+```
+
+
+
+
+
+
+
+
+
 
 
 
@@ -268,735 +234,41 @@ EAGLE_typeins<- read.csv("data/EAGLE_typeins_all.csv", sep = ",")
 head(EAGLE_typeins)
 ```
 
-# Use of EAGLE vocabularies in the EDH
-
-The Epigraphic Database Heidelberg (<https://edh-www.adw.uni-heidelberg.de/>) uses the existing vocabularies from EAGLE Project (<https://www.eagle-network.eu/resources/vocabularies/>) in the following five Epidoc XML tags: `Object Type`, `Keywords`, `Material`, `RS Execution`, `RS Decoration`.
-
-Example of record in XML:
-
-```         
-<support>
-  <objectType ref="http://www.eagle-network.eu/voc/objtyp/lod/257">Tafel</objectType>
-</support>
-```
-
-In our processed version of the EDH dataset, all records consist of the following attributes:
-
--   Eagle Linked Open Data numeric code for vocabulary, i.e. 257, extracted from the reference within the Epidoc XML tag.
-
--   Free text description, extracted from the XML tag.
-
-See the raw data below:
-
-```{r, select attributes}
-EDH_eagle<- EDH %>% 
-  select(layout_execution, layout_execution_text, support_objecttype, support_objecttype_text, support_material, support_material_text, support_decoration, keywords_term, keywords_term_text, type_of_inscription_clean)
-
-EDH_eagle
-```
-
-## Inscriptions with missing data from XML files
-
-In 2021, the total of 346 record were missing information extracted from XML files (due to delay in availability of published data through EDH data dumps on their website). However, at least partial information about them could be extracted from the then existing EDH API. For the purpose of the current evaluation of the Eagle vocabularies are these 346 records considered as missing as we cannot access their respective XML files with vocabularies.
-
-```{r}
-EDH %>% 
-  filter(is.na(support_objecttype)) -> missingXML
-missingXML
-```
-
-```{r, echo=FALSE, eval=FALSE}
-EDH_missingXML_json <- jsonlite::toJSON(missingXML)
-
-write(EDH_missingXML_json, file="data/EDH_missingXML_2021.json")
-```
-
-## The total number of Eagle vocabularies in EDH dataset
-
-```{r}
-#object
-EDH_eagle %>% 
-  filter(!is.na(support_objecttype) & support_objecttype != "") %>% nrow() -> object_total
-
-#type inscription
-EDH_eagle %>% 
-  filter(!is.na(keywords_term) & keywords_term != "" ) %>% nrow() -> typeinsc_total
-
-#material
-EDH_eagle %>% 
-  filter(!is.na(support_material) & support_material != "") %>% nrow() -> material_total
-
-#writing
-EDH_eagle %>% 
-  filter(!is.na(layout_execution) & layout_execution != "") %>% nrow() -> writing_total
-
-#decoration
-EDH_eagle %>% 
-  filter(!is.na(support_decoration) & support_decoration != "") %>% nrow() -> decor_total
-
-
-#how many Eagle vocabularies has been used in the EDH
-Eagle_total <- object_total + typeinsc_total + material_total + writing_total + decor_total
-Eagle_total
-```
-
-## Inscription type
-
-Attributes categorising the type of inscription, used `r typeinsc_total` times.
-
-XML: Keywords tag, term tag.
-
-Example of record in XML:
-
-```         
-<keywords>
-  <term ref="http://www.eagle-network.eu/voc/typeins/lod/92">Grabinschrift</term>
-</keywords>
-```
-
-### Display the first six values for illustration
-
-```{r}
-EDH_eagle %>% 
-  select(keywords_term, keywords_term_text, type_of_inscription_clean) %>%
-  head()
-```
-
-### List of all related Eagle vocabularies and their count
-
-```{r}
-EDH_eagle %>% 
-  select(keywords_term, keywords_term_text) %>% 
-  count(keywords_term, keywords_term_text, sort=TRUE) -> insc_type_overview_xml
-
-EDH_eagle %>% 
-  select(keywords_term, keywords_term_text,type_of_inscription_clean) %>% 
-  count(keywords_term, keywords_term_text, type_of_inscription_clean, sort=TRUE) -> insc_type_overview_all
-```
-
-```{r}
-write_csv(insc_type_overview_xml, "./EDH_inscription_type_eagle_vocab_xml.csv", col_names = TRUE)
-```
-
-```{r}
-insc_type_overview_xml
-```
 
 
 ### Merge with EAGLE LOD data
 
 
 ```{r}
-EDH_eagle
+#Petra continue here, the aim is to get prefLabel to the latest table
 ```
 
 ```{r}
-EDH_eagle$keywords_term <- as.numeric(EDH_eagle$keywords_term)
+# add hmtl to the Eagle concept so they have the same format as in ISicily, create new attribute
+EAGLE_typeins_small<- EAGLE_typeins %>% 
+  select(concept, prefLabel, EAGLE_lod_id) %>% 
+  mutate(hyperlink = paste(str_trim(concept), ".html", sep=""))
 
+vocabs <- vocabs %>% 
+  mutate(EAGLE_lod_id = as.numeric(str_extract(vocabs$term_ref_0, "(?<=http://www.eagle-network.eu/voc/typeins/lod/)(\\d{1,3})(?=\\.html)")))
 
-EAGLE_typeins_all<- EDH_eagle %>% dplyr::left_join(EAGLE_typeins, by=c("keywords_term"="EAGLE_lod_id"), multiple="first")
+# join them together
+EAGLE_typeins_all<- vocabs %>% dplyr::left_join(EAGLE_typeins_small, by="EAGLE_lod_id", multiple ="first")
+
 
 EAGLE_typeins_all %>% 
-  select(concept, prefLabel, keywords_term_text, type_of_inscription_clean) %>% 
-  count(concept, prefLabel, keywords_term_text, sort=TRUE) -> EDH_EAGLE_usage
+  select(EAGLE_lod_id,term_ref_0, term_key_0, term_text_0, prefLabel) %>% 
+  count(EAGLE_lod_id, prefLabel, term_key_0, term_text_0, sort=TRUE) %>% 
+  rename(EAGLE_prefLabel = prefLabel) %>% 
+  rename(XML_term_key_0 = term_key_0) %>% 
+  rename(XML_term_text_0 = term_text_0) -> ISicily_EAGLE_usage
 
-EDH_EAGLE_usage
+ISicily_EAGLE_usage
 ```
+
 #### Save as CSV
 ```{r}
-write_csv(EDH_EAGLE_usage, file = "./data/EDH_EAGLE_usage_typeinsc.csv", col_names = TRUE)
+write_csv(ISicily_EAGLE_usage, file = "./data/ISicily_EAGLE_usage_typeinsc.csv", col_names = TRUE)
 ```
 
 
-
-### Total number of unique vocabularies
-
-```{r}
-length(unique(EDH_eagle$keywords_term))
-```
-
-### Overview of the ten most common vocabularies
-
-#### Keyword term 92 (Sepulcralis)
-
-<https://www.eagle-network.eu/voc/typeins/lod/92.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(keywords_term == 92) %>% 
-  count(keywords_term_text, sort=TRUE)
-```
-
-#### Keyword term 143 (Ignoratur)
-
-<https://www.eagle-network.eu/voc/typeins/lod/143.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(keywords_term == 143) %>% 
-  count(keywords_term_text, sort=TRUE)
-```
-
-#### Keyword term 80 (Weihinschrift)
-
-<https://www.eagle-network.eu/voc/typeins/lod/80.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(keywords_term == 80) %>% 
-  count(keywords_term_text, sort=TRUE)
-```
-
-#### Keyword term 311 (Besitzer-/Herstellerinschrift)
-
-<https://www.eagle-network.eu/voc/typeins/lod/311.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(keywords_term == 311) %>% 
-  count(keywords_term_text, sort=TRUE)
-```
-
-#### Keyword term 69 (Honorific inscription)
-
-<https://www.eagle-network.eu/voc/typeins/lod/69.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(keywords_term == 69) %>% 
-  count(keywords_term_text, sort=TRUE)
-```
-
-#### Keyword term 261 (Bau-/Stifterinschrift)
-
-<https://www.eagle-network.eu/voc/typeins/lod/261.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(keywords_term == 261) %>% 
-  count(keywords_term_text, sort=TRUE)
-```
-
-#### Keyword term 102 (Meilen-/Leugenstein)
-
-<https://www.eagle-network.eu/voc/typeins/lod/102.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(keywords_term == 102) %>% 
-  count(keywords_term_text, sort=TRUE)
-```
-
-#### Keyword term 115 (Aufschrift)
-
-<https://www.eagle-network.eu/voc/typeins/lod/115.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(keywords_term == 115) %>% 
-  count(keywords_term_text, sort=TRUE)
-```
-
-#### Keyword term 73 (Akklamation)
-
-<https://www.eagle-network.eu/voc/typeins/lod/73.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(keywords_term == 73) %>% 
-  count(keywords_term_text, sort=TRUE)
-```
-
-#### Keyword term 91 (Militärdiplom)
-
-<https://www.eagle-network.eu/voc/typeins/lod/91.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(keywords_term == 91) %>% 
-  count(keywords_term_text, sort=TRUE)
-```
-
-### Missing Eagle LOD, text present
-
-```{r}
-EDH_eagle %>% 
-  select(keywords_term, keywords_term_text) %>% 
-  filter(keywords_term == "") %>% 
-  count(keywords_term_text, sort=TRUE)
-```
-
-### All unique values of text input
-
-```{r}
-unique(EDH_eagle$keywords_term_text)
-```
-
-## Object
-
-Attributes categorising the inscribed object, used `r object_total` times.
-
-XML: Support tag, tag objectType.
-
-Example of record in XML:
-
-```         
-<support>
-  <objectType ref="http://www.eagle-network.eu/voc/objtyp/lod/257">Tafel</objectType>
-</support>
-```
-
-### Display the first six values for illustration
-
-```{r, head objecttype}
-EDH_eagle %>% 
-  select(support_objecttype, support_objecttype_text) %>% 
-  head()
-```
-
-### List of all related Eagle object vocabularies and their count
-
-```{r}
-EDH_eagle %>% 
-  select(support_objecttype, support_objecttype_text) %>% 
-  count(support_objecttype, sort=TRUE)
-```
-
-### Total number of unique object vocabularies
-
-```{r}
-length(unique(EDH_eagle$support_objecttype))
-```
-
-### Overview of the ten most common vocabularies
-
-#### Object type 2 (ignoratur)
-
-<http://www.eagle-network.eu/voc/objtyp/lod/2.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(support_objecttype == 2) %>% 
-  count(support_objecttype_text, sort=TRUE)
-```
-
-#### Object type 257 (Tafel)
-
-<http://www.eagle-network.eu/voc/objtyp/lod/257.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(support_objecttype == 257) %>% 
-  count(support_objecttype_text, sort=TRUE)
-```
-
-#### Object type 29 (Altar)
-
-<http://www.eagle-network.eu/voc/objtyp/lod/29.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(support_objecttype == 29) %>% 
-  count(support_objecttype_text, sort=TRUE)
-```
-
-#### Object type 250 (Stele)
-
-<http://www.eagle-network.eu/voc/objtyp/lod/250.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(support_objecttype == 250) %>% 
-  count(support_objecttype_text, sort=TRUE)
-```
-
-#### Object type 140 (Instrumentum domesticum)
-
-<http://www.eagle-network.eu/voc/objtyp/lod/140.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(support_objecttype == 140) %>% 
-  count(support_objecttype_text, sort=TRUE)
-```
-
-#### Object type 57 (Statue base)
-
-<http://www.eagle-network.eu/voc/objtyp/lod/57.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(support_objecttype == 57) %>% 
-  count(support_objecttype_text, sort=TRUE)
-```
-
-#### Object type 189 (Block)
-
-<http://www.eagle-network.eu/voc/objtyp/lod/189.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(support_objecttype == 189) %>% 
-  count(support_objecttype_text, sort=TRUE)
-```
-
-#### Object type 35 (Architekturteil)
-
-<http://www.eagle-network.eu/voc/objtyp/lod/35.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(support_objecttype == 35) %>% 
-  count(support_objecttype_text, sort=TRUE)
-```
-
-#### Object type 214 (Sarkophag)
-
-<http://www.eagle-network.eu/voc/objtyp/lod/214.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(support_objecttype == 214) %>% 
-  count(support_objecttype_text, sort=TRUE)
-```
-
-#### Object type 89 (Meilen-/Leugenstein)
-
-<http://www.eagle-network.eu/voc/objtyp/lod/89.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(support_objecttype == 89) %>% 
-  count(support_objecttype_text, sort=TRUE)
-```
-
-### Missing Eagle vocabulary, but text present
-
-```{r}
-EDH_eagle %>% 
-  select(support_objecttype, support_objecttype_text) %>% 
-  filter(support_objecttype == "") %>% 
-  count(support_objecttype_text, sort=TRUE)
-```
-
-### List of all vocabularies, their text description and count
-
-```{r}
-EDH_eagle %>% 
-  select(support_objecttype, support_objecttype_text) %>% 
-  count(support_objecttype, support_objecttype_text, sort=T)
-```
-
-### List of all unique values of text input
-
-```{r}
-unique(EDH_eagle$support_objecttype_text)
-```
-
-
-## Material
-
-Attributes categorising the inscribed material, used `r material_total` times.
-
-XML: Support tag, material tag.
-
-Example of record in XML (with missing Eagle LOD):
-
-```         
-<support>
-  <material>Marmor, geädert / farbig</material>
-</support>
-```
-
-### Display the first six values for illustration
-
-```{r}
-EDH_eagle %>% 
-  select(support_material, support_material_text) %>%
-  head()
-```
-
-### List of all related Eagle vocabularies and their count
-
-```{r}
-EDH_eagle %>% 
-  select(support_material, support_material_text) %>% 
-  count(support_material, sort=TRUE)
-```
-
-### Total number of unique vocabularies
-
-```{r}
-length(unique(EDH_eagle$support_material))
-```
-
-### Overview of the ten most common vocabularies
-
-#### Material 138 (ignoratur)
-
-<https://www.eagle-network.eu/voc/material/lod/138.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(support_material == 138) %>% 
-  count(support_material_text, sort=TRUE)
-```
-
-#### Material 60 (Kalkstein)
-
-<https://www.eagle-network.eu/voc/material/lod/60.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(support_material == 60) %>% 
-  count(support_material_text, sort=TRUE)
-```
-
-#### Material 75 (Sandstein)
-
-<https://www.eagle-network.eu/voc/material/lod/75.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(support_material == 75) %>% 
-  count(support_material_text, sort=TRUE)
-```
-
-#### Material 48 (Marmor)
-
-<https://www.eagle-network.eu/voc/material/lod/48.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(support_material == 48) %>% 
-  count(support_material_text, sort=TRUE)
-```
-
-#### Material 131 (Arcilla)
-
-<https://www.eagle-network.eu/voc/material/lod/131.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(support_material == 131) %>% 
-  count(support_material_text, sort=TRUE)
-```
-
-#### Material 109 (Aes)
-
-<https://www.eagle-network.eu/voc/material/lod/109.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(support_material == 109) %>% 
-  count(support_material_text, sort=TRUE)
-```
-
-#### Material 108 (Plumbum)
-
-<https://www.eagle-network.eu/voc/material/lod/108.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(support_material == 108) %>% 
-  count(support_material_text, sort=TRUE)
-```
-
-#### Material 123 (Lignum)
-
-<https://www.eagle-network.eu/voc/material/lod/123.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(support_material == 123) %>% 
-  count(support_material_text, sort=TRUE)
-```
-
-#### Material 115 (Argentum)
-
-<https://www.eagle-network.eu/voc/material/lod/115.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(support_material == 115) %>% 
-  count(support_material_text, sort=TRUE)
-```
-
-### Material missing Eagle LOD, text present
-
-Example: `<material>Marmor, geädert / farbig</material>`
-
-```{r}
-EDH_eagle %>% 
-  select(support_material, support_material_text) %>% 
-  filter(support_material == "") %>% 
-  count(support_material_text, sort=TRUE)
-```
-
-### All unique values of text input
-
-```{r}
-unique(EDH_eagle$support_material_text)
-```
-
-## Writing
-
-Attributes categorising the execution of writing, used `r writing_total` times.
-
-XML: Layout tag, type execution.
-
-Example of record in XML:
-
-```         
-<layout>
-  <rs type="execution" ref="http://www.eagle-network.eu/voc/writing/lod/21">unbestimmt</rs>
-</layout>
-```
-
-### Display the first six values for illustration
-
-```{r}
-EDH_eagle %>% 
-  select(layout_execution, layout_execution_text) %>%
-  head()
-```
-
-### List of all related Eagle vocabularies and their count
-
-```{r}
-EDH_eagle %>% 
-  select(layout_execution, layout_execution_text) %>% 
-  count(layout_execution, sort=TRUE)
-```
-
-### Total number of unique vocabularies
-
-```{r}
-length(unique(EDH_eagle$layout_execution))
-```
-
-### Overview of the ten most common vocabularies
-
-#### Layout execution 21 (Ignoratur)
-
-<https://www.eagle-network.eu/voc/writing/lod/21.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(layout_execution == 21) %>% 
-  count(layout_execution_text, sort=TRUE)
-```
-
-#### Layout execution 88 (Geritzt)
-
-<https://www.eagle-network.eu/voc/writing/lod/88.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(layout_execution == 88) %>% 
-  count(layout_execution_text, sort=TRUE)
-```
-
-#### Layout execution 77 (gestempelt)
-
-<https://www.eagle-network.eu/voc/writing/lod/77.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(layout_execution == 77) %>% 
-  count(layout_execution_text, sort=TRUE)
-```
-
-#### Layout execution 96 (Gemalt / Dipinto)
-
-<https://www.eagle-network.eu/voc/writing/lod/96.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(layout_execution == 96) %>% 
-  count(layout_execution_text, sort=TRUE)
-```
-
-#### Layout execution 145 (gepunzt)
-
-<https://www.eagle-network.eu/voc/writing/lod/145.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(layout_execution == 145) %>% 
-  count(layout_execution_text, sort=TRUE)
-```
-
-#### Layout execution 23 (eingraviert)
-
-<https://www.eagle-network.eu/voc/writing/lod/23.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(layout_execution == 23) %>% 
-  count(layout_execution_text, sort=TRUE)
-```
-
-#### Layout execution 152 (mozaik)
-
-<https://www.eagle-network.eu/voc/writing/lod/152.html>
-
-```{r}
-EDH_eagle %>% 
-  filter(layout_execution == 152) %>% 
-  count(layout_execution_text, sort=TRUE)
-```
-
-### Layout execution empty tag, but text present
-
-```{r}
-EDH_eagle %>% 
-  filter(layout_execution == "") %>% 
-  count(layout_execution_text, sort=TRUE)
-```
-
-### Layout execution NA (tag completely missing in XML)
-
-```{r}
-EDH_eagle %>% 
-  select(layout_execution, layout_execution_text) %>% 
-  filter(is.na(layout_execution)) %>% 
-  count(layout_execution_text, sort=TRUE)
-```
-
-### All unique values of text input
-
-```{r}
-unique(EDH_eagle$layout_execution_text)
-```
-
-## Decoration
-
-Attributes categorising the type of decoration. In EDH very limited use - not the full potential of LOD, used `r decor_total` times.
-
-XML: Support, Rs tag, type decoration.
-
-Example of record in XML:
-
-```         
-<rs type="decoration" ref="http://www.eagle-network.eu/voc/decor/lod/1000">nein</rs>
-```
-
-<https://www.eagle-network.eu/voc/decor/lod/1000.html> = nein
-
-<https://www.eagle-network.eu/voc/decor/lod/2000.html>, 2000 = ja
-
-NA = missing information
-
-### Total number of unique vocabularies
-
-```{r}
-length(unique(EDH_eagle$support_decoration))
-```
-
-### List of all related Eagle vocabularies and their count
-
-```{r}
-EDH_eagle %>% 
-  count(support_decoration, sort=TRUE)
-```
