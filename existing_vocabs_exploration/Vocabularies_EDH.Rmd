@@ -29,7 +29,7 @@ library(jsonlite)
 If you have a locally saved dataset
 
 ```{r}
-EDH <- fromJSON("./data/EDH_text_cleaned_2021-01-21.json") ## 2021 version
+EDH <- fromJSON("./data/EDH/EDH_text_cleaned_2021-01-21.json") ## 2021 version
 head(EDH)
 ```
 
@@ -48,12 +48,12 @@ If you are interested in how this dataset was compiled from the EDH API and XML 
 # EAGLE vocabularies
 
 ```{r}
-EAGLE_vocabs<- read.csv("data/queryResults.csv", sep = ",")
+EAGLE_vocabs<- read.csv("data/EAGLE/queryResults.csv", sep = ",")
 head(EAGLE_vocabs)
 ```
 
 ```{r}
-EAGLE_typeins<- read.csv("data/EAGLE_typeins_all.csv", sep = ",")
+EAGLE_typeins<- read.csv("data/EAGLE/EAGLE_typeins_all.csv", sep = ",")
 head(EAGLE_typeins)
 ```
 
@@ -97,7 +97,7 @@ missingXML
 ```{r, echo=FALSE, eval=FALSE}
 EDH_missingXML_json <- jsonlite::toJSON(missingXML)
 
-write(EDH_missingXML_json, file="data/EDH_missingXML_2021.json")
+write(EDH_missingXML_json, file="data/EDH/EDH_missingXML_2021.json")
 ```
 
 ## The total number of Eagle vocabularies in EDH dataset
@@ -164,7 +164,7 @@ EDH_eagle %>%
 ```
 
 ```{r}
-write_csv(insc_type_overview_xml, "./EDH_inscription_type_eagle_vocab_xml.csv", col_names = TRUE)
+write_csv(insc_type_overview_xml, "./output/EDH_inscription_type_from_XML.csv", col_names = TRUE)
 ```
 
 ```{r}
@@ -191,9 +191,11 @@ EAGLE_typeins_all %>%
 
 EDH_EAGLE_usage
 ```
+
+
 #### Save as CSV
 ```{r}
-write_csv(EDH_EAGLE_usage, file = "./data/EDH_EAGLE_usage_typeinsc.csv", col_names = TRUE)
+write_csv(EDH_EAGLE_usage, file = "./output/EDH_EAGLE_usage_typeinsc.csv", col_names = TRUE)
 ```
 
 

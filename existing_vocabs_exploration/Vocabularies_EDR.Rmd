@@ -93,8 +93,8 @@ SOURCE_DIR = "./data/EDR/all_xml"
 TARGET_DIR = "xml_to_csv"
 
 # clean target dir by deleting and recreating
-shutil.rmtree(TARGET_DIR, ignore_errors=True)
-os.mkdir(TARGET_DIR)
+# shutil.rmtree(TARGET_DIR, ignore_errors=True)
+# os.mkdir(TARGET_DIR)
 
 docs = []
 
@@ -153,77 +153,44 @@ df.to_csv(f"{TARGET_DIR}/{PROJECT}_type_of_inscriptions.csv", index=False)
 
 ```{r}
 # load the CSV back in
-ISicily_csv <- read.csv("./xml_to_csv/ISicily_type_of_inscriptions.csv")
+EDR_csv <- read.csv("./xml_to_csv/EDR_type_of_inscriptions.csv")
 
 # select smaller subset to work with
 
-ISicily_csv %>% 
-  select(title, term_key_0, term_ref_0, term_text_0, term_key_1, term_ref_1, term_text_1) -> vocabs
+EDR_csv %>% 
+  select(localid, term_ref_0, term_text_0) -> vocabs
 
 View(vocabs)
 ```
 
-# Explore the `ISicily` vocabularies and its use
+# Explore the `EDR` vocabularies and its use
 
-```{r}
-# how many unique types of inscriptions there are
-
-unique(vocabs$term_key_0) %>% sort() -> unique_keys
-length(unique_keys)
-unique_keys
-
-```
-
-
-```{r}
-# what is the frequency of types of inscriptions from the most to least used
-vocabs %>% 
-  count(term_key_0, sort=T)
-```
-
-```{r}
-# what is the combination of inscription types used to describe one inscription
-
-vocabs %>% 
-  filter(term_key_1 != "") %>% 
-  select(term_key_0, term_key_1)
-```
-
-
-
-
-# what Eagle vocabularies are used
+## what Eagle vocabularies are used
 
 ```{r}
 vocabs %>% 
   distinct(term_ref_0)
 ```
 
-# what is the frequency of Eagle vocabularies
+## what is the frequency of Eagle vocabularies
 
 ```{r}
 vocabs %>% 
  count(term_ref_0, sort=T)
 ```
 
-# what is the combination of Eagle vocabularies used to describe one inscription
+## what are the unique combinations of Eagle vocabulary and freetext
 
 ```{r}
 vocabs %>% 
-  filter(term_ref_1 != "") %>% 
-  select(term_ref_0, term_ref_1)
+  count(term_text_0, term_ref_0, sort=T) -> EDR_simple_overview
+
+EDR_simple_overview
 ```
-
-
-
-# what are the unique combinations of Eagle vocabulary and freetext
 
 ```{r}
-vocabs %>% 
-  count(term_key_0, term_text_0, term_ref_0, sort=T) %>% 
-  View
+write_csv(EDR_simple_overview, "./output/EDR_inscription_type_from_XML.csv", col_names = TRUE)
 ```
-
 
 
 
@@ -242,12 +209,12 @@ vocabs %>%
 # EAGLE vocabularies
 
 ```{r}
-EAGLE_vocabs<- read.csv("data/queryResults.csv", sep = ",")
+EAGLE_vocabs<- read.csv("data/EAGLE/queryResults.csv", sep = ",")
 head(EAGLE_vocabs)
 ```
 
 ```{r}
-EAGLE_typeins<- read.csv("data/EAGLE_typeins_all.csv", sep = ",")
+EAGLE_typeins<- read.csv("data/EAGLE/EAGLE_typeins_all.csv", sep = ",")
 head(EAGLE_typeins)
 ```
 
@@ -257,35 +224,30 @@ head(EAGLE_typeins)
 
 
 ```{r}
-#Petra continue here, the aim is to get prefLabel to the latest table
-```
-
-```{r}
-# add hmtl to the Eagle concept so they have the same format as in ISicily, create new attribute
+# add hmtl to the Eagle concept so they have the same format as in EDR, create new attribute
 EAGLE_typeins_small<- EAGLE_typeins %>% 
   select(concept, prefLabel, EAGLE_lod_id) %>% 
   mutate(hyperlink = paste(str_trim(concept), ".html", sep=""))
 
 vocabs <- vocabs %>% 
-  mutate(EAGLE_lod_id = as.numeric(str_extract(vocabs$term_ref_0, "(?<=http://www.eagle-network.eu/voc/typeins/lod/)(\\d{1,3})(?=\\.html)")))
+  mutate(EAGLE_lod_id = as.numeric(str_extract(vocabs$term_ref_0, "(?<=http://www.eagle-network.eu/voc/typeins/lod/)(\\d{1,3})")))
 
 # join them together
 EAGLE_typeins_all<- vocabs %>% dplyr::left_join(EAGLE_typeins_small, by="EAGLE_lod_id", multiple ="first")
 
 
 EAGLE_typeins_all %>% 
-  select(EAGLE_lod_id,term_ref_0, term_key_0, term_text_0, prefLabel) %>% 
-  count(EAGLE_lod_id, prefLabel, term_key_0, term_text_0, sort=TRUE) %>% 
+  select(EAGLE_lod_id,term_ref_0,  term_text_0, prefLabel) %>% 
+  count(EAGLE_lod_id, prefLabel,  term_text_0, sort=TRUE) %>% 
   rename(EAGLE_prefLabel = prefLabel) %>% 
-  rename(XML_term_key_0 = term_key_0) %>% 
-  rename(XML_term_text_0 = term_text_0) -> ISicily_EAGLE_usage
+  rename(XML_term_text_0 = term_text_0) -> EDR_EAGLE_usage
 
-ISicily_EAGLE_usage
+EDR_EAGLE_usage
 ```
 
 #### Save as CSV
 ```{r}
-write_csv(ISicily_EAGLE_usage, file = "./data/ISicily_EAGLE_usage_typeinsc.csv", col_names = TRUE)
+write_csv(EDR_EAGLE_usage, file = "./output/EDR_EAGLE_usage_typeinsc.csv", col_names = TRUE)
 ```
 
 

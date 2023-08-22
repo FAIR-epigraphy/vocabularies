@@ -41,11 +41,12 @@ unzip("./data/ISicily-v0.3beta.zip", exdir = "./data")
 ## Read and parse the XML files and extract the vocabularies data into a CSV, using python script
 
 We are looking specifically for vocabularies `terms` that contain information about the type of an inscription
-`<textClass>`
-  `<keywords scheme="http://www.eagle-network.eu/voc/typeins.html">`
+
+    `<textClass>`
+    `<keywords scheme="http://www.eagle-network.eu/voc/typeins.html">`
     `<term key="funerary" ref="http://www.eagle-network.eu/voc/typeins/lod/92.html">funerary</term>`
-  `</keywords>`
-`</textClass>`
+    `</keywords>`
+    `</textClass>`
 
 ```{r}
 # Enabling reticulate library to run the python scripts within R
@@ -76,8 +77,8 @@ SOURCE_DIR = "./data/ISicily-ISicily-cf52385/inscriptions/"
 TARGET_DIR = "xml_to_csv"
 
 # clean target dir by deleting and recreating
-shutil.rmtree(TARGET_DIR, ignore_errors=True)
-os.mkdir(TARGET_DIR)
+# shutil.rmtree(TARGET_DIR, ignore_errors=True)
+# os.mkdir(TARGET_DIR)
 
 docs = []
 
@@ -203,10 +204,13 @@ vocabs %>%
 
 ```{r}
 vocabs %>% 
-  count(term_key_0, term_text_0, term_ref_0, sort=T) %>% 
-  View
+  count(term_key_0, term_text_0, term_ref_0, sort=T) -> ISicily_simple_overview 
+ISicily_simple_overview
 ```
 
+```{r}
+write_csv(ISicily_simple_overview, "./output/ISicily_inscription_type_from_XML.csv", col_names = TRUE)
+```
 
 
 
@@ -225,12 +229,12 @@ vocabs %>%
 # EAGLE vocabularies
 
 ```{r}
-EAGLE_vocabs<- read.csv("data/queryResults.csv", sep = ",")
+EAGLE_vocabs<- read.csv("data/EAGLE/queryResults.csv", sep = ",")
 head(EAGLE_vocabs)
 ```
 
 ```{r}
-EAGLE_typeins<- read.csv("data/EAGLE_typeins_all.csv", sep = ",")
+EAGLE_typeins<- read.csv("data/EAGLE/EAGLE_typeins_all.csv", sep = ",")
 head(EAGLE_typeins)
 ```
 
@@ -268,7 +272,7 @@ ISicily_EAGLE_usage
 
 #### Save as CSV
 ```{r}
-write_csv(ISicily_EAGLE_usage, file = "./data/ISicily_EAGLE_usage_typeinsc.csv", col_names = TRUE)
+write_csv(ISicily_EAGLE_usage, file = "./output/ISicily_EAGLE_usage_typeinsc.csv", col_names = TRUE)
 ```
 
 

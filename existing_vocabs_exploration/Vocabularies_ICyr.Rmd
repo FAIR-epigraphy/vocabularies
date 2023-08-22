@@ -1,0 +1,143 @@
+---
+title: "Use of the existing Eagle project vocabularies in the ICyrenaica dataset"
+author:
+- Petra Hermankova^[Johannes Gutenberg University in Mainz, petra.hermankova@uni-mainz.de, https://orcid.org/0000-0002-6349-0540]
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    theme: united
+    toc: yes
+    toc_float: true
+    number_sections: true
+    toc_depth: 2
+    df_print: paged
+---
+
+**The aim of this script is to analyse the usage of EAGLE vocabularies in the I.Sicily as part of the FAIR Epigraphy project and the Epigraphy.info working group tasked with cleaning up the EAGLE vocabularies.**
+
+## Environment setup
+
+```{r setup, echo=TRUE, message=FALSE}
+library(tidyverse)
+library(jsonlite)
+library(zen4R)
+library(xml2)
+library(XML)
+```
+
+# Data loading and preparation
+
+##  Load the latest ICyr dataset directly from their website
+
+```{r}
+
+# Does not work , solve 
+
+# download.file("https://ircyr2020.inslib.kcl.ac.uk/en/inscriptions/zip/", "ICyr.zip")
+
+```
+
+## Extract the Zenodo repository
+```{r}
+unzip(filename, exdir = "./data/ICyr")
+```
+
+## Read and parse the XML files and extract the vocabularies data into a CSV, using python script
+
+We are looking specifically for vocabularies `terms` that contain information about the type of an inscription
+`<textClass>`
+  `<keywords scheme="http://www.eagle-network.eu/voc/typeins.html">`
+    `<term key="funerary" ref="http://www.eagle-network.eu/voc/typeins/lod/92.html">funerary</term>`
+  `</keywords>`
+`</textClass>`
+
+```{r}
+# Enabling reticulate library to run the python scripts within R
+library(reticulate)
+```
+
+```{python}
+# Read and parse the XML files and extract the vocabularies data into a CSV, using python script
+
+#!/usr/bin/env python3
+# Epidoc to csv converter
+# written by Brian Ballsun-Stanton
+# under a MIT License
+
+import glob
+import csv
+import epidoc
+import shutil
+import os
+import tqdm
+import json
+import numpy as np
+import pandas as pd
+
+
+PROJECT = "ICyr"
+SOURCE_DIR = "./data/ICyr"
+TARGET_DIR = "xml_to_csv"
+
+# clean target dir by deleting and recreating
+# shutil.rmtree(TARGET_DIR, ignore_errors=True)
+# os.mkdir(TARGET_DIR)
+
+docs = []
+
+# get all files in source dir
+for i, file in enumerate(tqdm.tqdm(glob.glob(f"{SOURCE_DIR}/*.xml"))):
+    with open(file) as f:
+        doc = epidoc.load(f)
+    docs.append(doc)
+    # if i > 10:
+    #     break
+    # break
+
+output_docs = []
+
+
+# Get Title, All instances of idno and terms
+# Terms hide under textClass
+
+max_terms = 0
+
+for doc in tqdm.tqdm(docs):
+    line = {}
+    line["title"] = doc.title
+    line["idno"] = doc.idno
+    for i, term in enumerate(doc.terms):
+        # prepend _{i} to each key inside term
+        for key in term.copy().keys():
+            term[f"term_{key}_{i}"] = term.pop(key) 
+        line[f"term_{i}"] = term
+        if max_terms < i:
+            max_terms = i
+
+    output_docs.append(line)
+
+
+
+# Write to JSON
+with open(f"{TARGET_DIR}/{PROJECT}_type_of_inscriptions.json", "w") as f:
+    json.dump(output_docs, f, indent=4)
+
+
+
+# Make output_docs a dataframe
+df = pd.DataFrame(output_docs)
+# flatten the idno dictionary into the dataframe
+df = pd.concat([df.drop(["idno"], axis=1), df["idno"].apply(pd.Series)], axis=1)
+for i in range(max_terms+1):
+    print(i)
+    df = pd.concat([df.drop([f"term_{i}"], axis=1), df[f"term_{i}"].apply(pd.Series)], axis=1)
+
+# Write to CSV
+df.to_csv(f"{TARGET_DIR}/{PROJECT}_type_of_inscriptions.csv", index=False)
+
+
+```
+As a result, ICyr does not use the tyep of inscription vocabulary.
+
+
+
