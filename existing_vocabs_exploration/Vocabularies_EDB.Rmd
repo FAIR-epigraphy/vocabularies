@@ -1,0 +1,246 @@
+---
+title: "Use of the existing Eagle project vocabularies in the EDB dataset"
+author:
+- Petra Hermankova^[Johannes Gutenberg University in Mainz, petra.hermankova@uni-mainz.de, https://orcid.org/0000-0002-6349-0540]
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    theme: united
+    toc: yes
+    toc_float: true
+    number_sections: true
+    toc_depth: 2
+    df_print: paged
+---
+
+**The aim of this script is to analyse the usage of EAGLE vocabularies in the I.Sicily as part of the FAIR Epigraphy project and the Epigraphy.info working group tasked with cleaning up the EAGLE vocabularies.**
+
+## Environment setup
+
+```{r setup, echo=TRUE, message=FALSE}
+library(tidyverse)
+library(jsonlite)
+library(zen4R)
+library(xml2)
+library(XML)
+```
+
+# Data loading and preparation
+
+##  Load the latest EDR dataset directly from Zenodo https://zenodo.org/record/8123304
+
+
+```{r}
+dir.create("./data/EDB")
+zen4R::download_zenodo("10.5281/zenodo.3575485", path = "./data/EDB")
+```
+
+## Extract the Zenodo repository
+```{r}
+
+zip_files <- list.files(path = "./data/EDB/", pattern = "*.zip", full.names = TRUE)
+
+lapply(zip_files, unzip, exdir = "./data/EDB/")
+
+unzip("./data/EDB/*.zip", exdir = "./data/EDB/")
+
+```
+
+## Read and parse the XML files and extract the vocabularies data into a CSV, using python script
+
+We are looking specifically for attribute `terms` that contain information about the type of an inscription
+`<textClass>`
+  `<keywords scheme="http://www.eagle-network.eu/voc/typeins.html">`
+    `<term key="funerary" ref="http://www.eagle-network.eu/voc/typeins/lod/92.html">funerary</term>`
+  `</keywords>`
+`</textClass>`
+
+```{r}
+# Enabling reticulate library to run the python scripts within R
+library(reticulate)
+#py_config()
+#py_discover_config()
+```
+
+```{python}
+# Read and parse the XML files and extract the vocabularies data into a CSV, using python script
+
+#!/usr/bin/env python3
+# Epidoc to csv converter
+# written by Brian Ballsun-Stanton
+# under a MIT License
+
+import glob
+import csv
+import epidoc
+import shutil
+import os
+import tqdm
+import json
+import numpy as np
+import pandas as pd
+
+
+PROJECT = "EDB"
+SOURCE_DIR = "./data/EDB/"
+TARGET_DIR = "xml_to_csv"
+
+# clean target dir by deleting and recreating
+# shutil.rmtree(TARGET_DIR, ignore_errors=True)
+# os.mkdir(TARGET_DIR)
+
+docs = []
+
+# get all files in source dir
+for i, file in enumerate(tqdm.tqdm(glob.glob(f"{SOURCE_DIR}/*.xml"))):
+    with open(file) as f:
+        doc = epidoc.load(f)
+    docs.append(doc)
+    # if i > 10:
+    #     break
+    # break
+
+output_docs = []
+
+
+# Get Title, All instances of idno and terms
+# Terms hide under textClass
+
+max_terms = 0
+
+for doc in tqdm.tqdm(docs):
+    line = {}
+    line["title"] = doc.title
+    line["idno"] = doc.idno
+    for i, term in enumerate(doc.terms):
+        # prepend _{i} to each key inside term
+        for key in term.copy().keys():
+            term[f"term_{key}_{i}"] = term.pop(key) 
+        line[f"term_{i}"] = term
+        if max_terms < i:
+            max_terms = i
+
+    output_docs.append(line)
+
+
+
+# Write to JSON
+with open(f"{TARGET_DIR}/{PROJECT}_type_of_inscriptions.json", "w") as f:
+    json.dump(output_docs, f, indent=4)
+
+
+
+# Make output_docs a dataframe
+df = pd.DataFrame(output_docs)
+# flatten the idno dictionary into the dataframe
+df = pd.concat([df.drop(["idno"], axis=1), df["idno"].apply(pd.Series)], axis=1)
+for i in range(max_terms+1):
+    print(i)
+    df = pd.concat([df.drop([f"term_{i}"], axis=1), df[f"term_{i}"].apply(pd.Series)], axis=1)
+
+# Write to CSV
+df.to_csv(f"{TARGET_DIR}/{PROJECT}_type_of_inscriptions.csv", index=False)
+
+
+```
+
+```{r}
+# load the CSV back in
+EDR_csv <- read.csv("./xml_to_csv/EDB_type_of_inscriptions.csv")
+
+# select smaller subset to work with
+
+EDR_csv %>% 
+  select(localid, term_ref_0, term_text_0) -> vocabs
+
+View(vocabs)
+```
+
+# Explore the `EDB` vocabularies and its use
+
+## what Eagle vocabularies are used
+
+```{r}
+vocabs %>% 
+  distinct(term_ref_0)
+```
+
+## what is the frequency of Eagle vocabularies
+
+```{r}
+vocabs %>% 
+ count(term_ref_0, sort=T)
+```
+
+## what are the unique combinations of Eagle vocabulary and freetext
+
+```{r}
+vocabs %>% 
+  count(term_text_0, term_ref_0, sort=T) -> EDR_simple_overview
+
+EDR_simple_overview
+```
+
+```{r}
+write_csv(EDR_simple_overview, "./output/EDB_inscription_type_from_XML.csv", col_names = TRUE)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# EAGLE vocabularies
+
+```{r}
+EAGLE_vocabs<- read.csv("data/EAGLE/queryResults.csv", sep = ",")
+head(EAGLE_vocabs)
+```
+
+```{r}
+EAGLE_typeins<- read.csv("data/EAGLE/EAGLE_typeins_all.csv", sep = ",")
+head(EAGLE_typeins)
+```
+
+
+
+### Merge with EAGLE LOD data
+
+
+```{r}
+# add hmtl to the Eagle concept so they have the same format as in EDR, create new attribute
+EAGLE_typeins_small<- EAGLE_typeins %>% 
+  select(concept, prefLabel, EAGLE_lod_id) %>% 
+  mutate(hyperlink = paste(str_trim(concept), ".html", sep=""))
+
+vocabs <- vocabs %>% 
+  mutate(EAGLE_lod_id = as.numeric(str_extract(vocabs$term_ref_0, "(?<=http://www.eagle-network.eu/voc/typeins/lod/)(\\d{1,3})")))
+
+# join them together
+EAGLE_typeins_all<- vocabs %>% dplyr::left_join(EAGLE_typeins_small, by="EAGLE_lod_id", multiple ="first")
+
+
+EAGLE_typeins_all %>% 
+  select(EAGLE_lod_id,term_ref_0,  term_text_0, prefLabel) %>% 
+  count(EAGLE_lod_id, prefLabel,  term_text_0, sort=TRUE) %>% 
+  rename(EAGLE_prefLabel = prefLabel) %>% 
+  rename(XML_term_text_0 = term_text_0) -> EDR_EAGLE_usage
+
+EDR_EAGLE_usage
+```
+
+#### Save as CSV
+```{r}
+write_csv(EDR_EAGLE_usage, file = "./output/EDR_EAGLE_usage_typeinsc.csv", col_names = TRUE)
+```
+
+
